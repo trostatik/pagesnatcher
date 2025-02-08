@@ -1,7 +1,7 @@
 package pagesnatcher
 
 import (
-	"archive/zip"
+	"bufio"
 	"fmt"
 	"io"
 	"log"
@@ -122,18 +122,16 @@ func cleanSourceName(rawName string) string {
 	return cleanString
 }
 
-func (s *Service) DownloadSite() error {
+func (s *Service) DownloadSite(outputChan chan string) error {
 	source := s.TargetURL
 
 	var restrictFileNames string
 	if runtime.GOOS == "windows" {
-		restrictFileNames = "ascii,windows"
+		restrictFileNames = "windows"
 	} else {
-		restrictFileNames = "ascii,unix"
+		restrictFileNames = "unix"
 	}
 
-	log.Println(restrictFileNames)
-	log.Println(strings.Join(s.Domains, ","))
 	wgetCmd := exec.Command(
 		"wget2",
 		"--recursive",
@@ -145,16 +143,29 @@ func (s *Service) DownloadSite() error {
 		"--convert-links",
 		"--no-robots",
 		"--progress=bar",
-		"--span-hosts", // Fetch from multiple domains
+		// "--span-hosts", // Fetch from multiple domains
 		"--domains="+strings.Join(s.Domains, ","),
 		source,
 	)
 	wgetCmd.Dir = s.OutputDir
-	wgetCmd.Stdout = os.Stdout
-	wgetCmd.Stderr = os.Stderr
-	log.Println("Executing:", wgetCmd.Args)
+	// Create pipes for stdout and stderr
+	stdoutPipe, err := wgetCmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("failed to get stdout pipe: %w", err)
+	}
+	stderrPipe, err := wgetCmd.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("failed to get stderr pipe: %w", err)
+	}
 
-	if err := wgetCmd.Run(); err != nil {
+	if err := wgetCmd.Start(); err != nil {
+		return fmt.Errorf("failed to run wget2: %w", err)
+	}
+
+	go streamOutput(stdoutPipe, outputChan)
+	go streamOutput(stderrPipe, outputChan)
+
+	if err := wgetCmd.Wait(); err != nil {
 		if exitError, ok := err.(*exec.ExitError); ok {
 			ws := exitError.Sys().(syscall.WaitStatus)
 			if ws.ExitStatus() == 8 {
@@ -165,8 +176,10 @@ func (s *Service) DownloadSite() error {
 		}
 	}
 
+	close(outputChan) // Close channel when done
+
 	// Traverse the directory to find dynamically imported files
-	err := filepath.WalkDir(s.OutputDir, func(path string, d os.DirEntry, err error) error {
+	err = filepath.WalkDir(s.OutputDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -404,58 +417,13 @@ func removeContents(dir string) error {
 	return nil
 }
 
-func (s *Service) CreateZip() error {
-	err := zipDirectory(s.OutputDir, s.ZipPath)
-	if err != nil {
-		return fmt.Errorf("failed to create zip file: %w", err)
+// Helper function to stream command output into a channel
+func streamOutput(pipe io.ReadCloser, outputChan chan string) {
+	log.Println("setting up stream output")
+	scanner := bufio.NewScanner(pipe)
+	log.Println("Scanner set")
+	for scanner.Scan() {
+		log.Println("SOMETHING HERE!")
+		outputChan <- scanner.Text()
 	}
-	return nil
-}
-
-func zipDirectory(source, zipPath string) error {
-	zipFile, err := os.Create(zipPath)
-	if err != nil {
-		return fmt.Errorf("failed to create zip file: %w", err)
-	}
-	defer zipFile.Close()
-
-	zipWriter := zip.NewWriter(zipFile)
-	defer zipWriter.Close()
-
-	err = filepath.Walk(source, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		relPath := strings.TrimPrefix(path, filepath.Dir(source)+"/")
-
-		// If it's a subdirectory, create a folder entry
-		if info.IsDir() {
-			_, err := zipWriter.Create(relPath + "/")
-			return err
-		}
-
-		// Add a file to the zip archive
-		file, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer file.Close()
-
-		// Create a file entry in the zip archive
-		writer, err := zipWriter.Create(relPath)
-		if err != nil {
-			return err
-		}
-
-		// Copy the file data to the zip entry
-		_, err = io.Copy(writer, file)
-		return err
-	})
-
-	if err != nil {
-		return fmt.Errorf("failed to zip directory: %w", err)
-	}
-
-	return nil
 }
