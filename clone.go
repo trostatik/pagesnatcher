@@ -136,16 +136,15 @@ func (s *Service) DownloadSite() error {
 	log.Println(strings.Join(s.Domains, ","))
 	wgetCmd := exec.Command(
 		"wget2",
-		"--mirror",       // recursive
-		"--timestamping", // Only re-retrieve if newer
 		"--recursive",
-		"--level=5", // recursive depth
-		"--no-remove-listing",
+		"--level=5",          // recursive depth
+		"--timestamping",     // Only re-retrieve if newer
 		"--page-requisites",  // images, css, etc
 		"--adjust-extension", // convert pages to html, eg asp
 		"--restrict-file-names="+restrictFileNames,
 		"--convert-links",
-		"--execute", "robots=off",
+		"--no-robots",
+		"--progress=bar",
 		"--span-hosts", // Fetch from multiple domains
 		"--domains="+strings.Join(s.Domains, ","),
 		source,
