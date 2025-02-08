@@ -19,9 +19,9 @@ import (
 
 func init() {
 	// Check if dependencies are installed
-	_, err := exec.LookPath("wget")
+	_, err := exec.LookPath("wget2")
 	if err != nil {
-		panic("wget is not installed")
+		panic("wget2 is not installed")
 	}
 	_, err = exec.LookPath("find")
 	if err != nil {
@@ -135,8 +135,12 @@ func (s *Service) DownloadSite() error {
 	log.Println(restrictFileNames)
 	log.Println(strings.Join(s.Domains, ","))
 	wgetCmd := exec.Command(
-		"wget",
-		"--mirror",           // recursive
+		"wget2",
+		"--mirror",       // recursive
+		"--timestamping", // Only re-retrieve if newer
+		"--recursive",
+		"--level=5", // recursive depth
+		"--no-remove-listing",
 		"--page-requisites",  // images, css, etc
 		"--adjust-extension", // convert pages to html, eg asp
 		"--restrict-file-names="+restrictFileNames,
