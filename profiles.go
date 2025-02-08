@@ -32,7 +32,6 @@ var FramerNoWaterMark Profile = Profile{
 
 var Webflow Profile = Profile{
 	Domains: []string{
-		// "cdn.prod.website-files.com",
 		"website-files.com",
 	},
 }
