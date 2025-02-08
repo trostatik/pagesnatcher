@@ -16,6 +16,7 @@ var Framer Profile = Profile{
 	ReplaceStrings: map[string]string{
 		"../events.framer.com": "./events.framer.com",
 		"../framerusercontent": "./framerusercontent",
+		"./framer.com/m/":      "framer.com/m/",
 	},
 	QueryFilePaths: []string{"?lossless=1"},
 }

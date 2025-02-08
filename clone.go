@@ -1,7 +1,6 @@
 package pagesnatcher
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"log"
@@ -95,7 +94,7 @@ func NewService(config *Config) *Service {
 	// Add domain
 	rootDomain, err := publicsuffix.EffectiveTLDPlusOne(config.TargetURL)
 	if err != nil {
-		panic(err)
+		return nil
 	}
 	config.Domains = append(config.Domains, rootDomain)
 
@@ -122,7 +121,8 @@ func cleanSourceName(rawName string) string {
 	return cleanString
 }
 
-func (s *Service) DownloadSite(outputChan chan string) error {
+func (s *Service) DownloadSite(outputWriter io.Writer) error {
+	log.Println(s)
 	source := s.TargetURL
 
 	var restrictFileNames string
@@ -142,28 +142,17 @@ func (s *Service) DownloadSite(outputChan chan string) error {
 		"--restrict-file-names="+restrictFileNames,
 		"--convert-links",
 		"--no-robots",
-		"--progress=bar",
-		// "--span-hosts", // Fetch from multiple domains
+		// "--limit-rate=100k",
 		"--domains="+strings.Join(s.Domains, ","),
 		source,
 	)
 	wgetCmd.Dir = s.OutputDir
-	// Create pipes for stdout and stderr
-	stdoutPipe, err := wgetCmd.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("failed to get stdout pipe: %w", err)
-	}
-	stderrPipe, err := wgetCmd.StderrPipe()
-	if err != nil {
-		return fmt.Errorf("failed to get stderr pipe: %w", err)
-	}
+	wgetCmd.Stdout = outputWriter
+	wgetCmd.Stderr = outputWriter
 
 	if err := wgetCmd.Start(); err != nil {
 		return fmt.Errorf("failed to run wget2: %w", err)
 	}
-
-	go streamOutput(stdoutPipe, outputChan)
-	go streamOutput(stderrPipe, outputChan)
 
 	if err := wgetCmd.Wait(); err != nil {
 		if exitError, ok := err.(*exec.ExitError); ok {
@@ -176,10 +165,9 @@ func (s *Service) DownloadSite(outputChan chan string) error {
 		}
 	}
 
-	close(outputChan) // Close channel when done
-
+	fmt.Fprintln(outputWriter, "Downloading additional files")
 	// Traverse the directory to find dynamically imported files
-	err = filepath.WalkDir(s.OutputDir, func(path string, d os.DirEntry, err error) error {
+	err := filepath.WalkDir(s.OutputDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -195,6 +183,8 @@ func (s *Service) DownloadSite(outputChan chan string) error {
 	if err != nil {
 		return fmt.Errorf("error walking directory: %w", err)
 	}
+
+	fmt.Fprintln(outputWriter, "Fixing references")
 	// Update references in .js and .mjs files
 	err = filepath.WalkDir(s.OutputDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -261,9 +251,11 @@ func processDynamicImports(baseDir string, filePath string) error {
 		importPath = filepath.Join(filepath.Dir(importPath), importName)
 
 		// Download the file to the target directory
-		wgetCmd := exec.Command("wget", "-O", targetPath, importPath)
-		wgetCmd.Stdout = os.Stdout
-		wgetCmd.Stderr = os.Stderr
+		wgetCmd := exec.Command("wget2",
+			"--timestamping",
+			"-O",
+			targetPath,
+			importPath)
 
 		if err := wgetCmd.Run(); err != nil {
 			fmt.Printf("failed to download %s: %v\n", importPath, err)
@@ -415,15 +407,4 @@ func removeContents(dir string) error {
 		}
 	}
 	return nil
-}
-
-// Helper function to stream command output into a channel
-func streamOutput(pipe io.ReadCloser, outputChan chan string) {
-	log.Println("setting up stream output")
-	scanner := bufio.NewScanner(pipe)
-	log.Println("Scanner set")
-	for scanner.Scan() {
-		log.Println("SOMETHING HERE!")
-		outputChan <- scanner.Text()
-	}
 }
