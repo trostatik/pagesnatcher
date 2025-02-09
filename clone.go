@@ -58,7 +58,8 @@ func (c *Config) Apply(profile string) {
 	}
 	p, ok := Profiles[profile]
 	if !ok {
-		panic(fmt.Sprintf("Profile %s not found", profile))
+		log.Println(fmt.Sprintf("Profile %s not found", profile))
+		return
 	}
 
 	// Add to config
@@ -100,7 +101,8 @@ func NewService(config *Config) *Service {
 
 	// Setup output directory
 	if err := os.MkdirAll(config.OutputDir, os.ModePerm); err != nil {
-		panic(err)
+		log.Println("Could not set up working director")
+		return nil
 	}
 
 	if *config.Clean {
@@ -117,6 +119,9 @@ func cleanSourceName(rawName string) string {
 
 	// Remove trailing periods and spaces
 	cleanString = strings.TrimRight(cleanString, ". /")
+
+	// Use lower case
+	cleanString = strings.ToLower(cleanString)
 
 	return cleanString
 }
