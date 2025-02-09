@@ -9,7 +9,7 @@ var Profiles = map[string]Profile{
 var Framer Profile = Profile{
 	Domains: []string{
 		"framerusercontent.com",
-		"framer.com",
+		"events.framer.com",
 		"framer.app",
 		"framer.website",
 	},

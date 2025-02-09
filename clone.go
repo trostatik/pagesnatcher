@@ -142,6 +142,7 @@ func (s *Service) DownloadSite(outputWriter io.Writer) error {
 		"--restrict-file-names="+restrictFileNames,
 		"--convert-links",
 		"--no-robots",
+		"--quota=120m",
 		// "--limit-rate=100k",
 		"--domains="+strings.Join(s.Domains, ","),
 		source,
@@ -173,9 +174,19 @@ func (s *Service) DownloadSite(outputWriter io.Writer) error {
 		}
 		// Process only JavaScript or MJS files
 		if !d.IsDir() && (strings.HasSuffix(d.Name(), ".js") || strings.HasSuffix(d.Name(), ".mjs")) {
+
+			content, err := os.ReadFile(path)
+			if err != nil {
+				return fmt.Errorf("could not read file %s: %w", path, err)
+			}
+
 			// Extract and download dynamic imports
-			if err := processDynamicImports(s.OutputDir, path); err != nil {
+			if err := processDynamicImports(s.OutputDir, path, string(content)); err != nil {
 				return fmt.Errorf("error processing dynamic imports for %s: %w", path, err)
+			}
+
+			if err := getOtherAssets(string(content), s.Domains, s.OutputDir); err != nil {
+				return fmt.Errorf("error processing other assets from %s: %w", path, err)
 			}
 		}
 		return nil
@@ -229,8 +240,8 @@ func findAndReplaceFile(filePath, oldText, newText string) error {
 }
 
 // processDynamicImports extracts and downloads dynamic imports into their original folder
-func processDynamicImports(baseDir string, filePath string) error {
-	imports, err := extractDynamicImports(filePath)
+func processDynamicImports(baseDir string, filePath string, content string) error {
+	imports, err := extractDynamicImports(filePath, content)
 	if err != nil {
 		return fmt.Errorf("could not extract imports: %w", err)
 	}
@@ -265,22 +276,21 @@ func processDynamicImports(baseDir string, filePath string) error {
 }
 
 // extractDynamicImports reads a file and extracts dynamic imports
-func extractDynamicImports(filePath string) ([]string, error) {
-	content, err := os.ReadFile(filePath)
-	if err != nil {
-		return nil, fmt.Errorf("could not read file %s: %w", filePath, err)
-	}
+func extractDynamicImports(filePath string, content string) ([]string, error) {
+	var imports []string
 
 	// Regex to find dynamic imports like import("url") or import('./file.mjs')
 	importRegex := regexp.MustCompile(`import\s*\(\s*["']([^"']+)["']\s*\)`)
+
 	matches := importRegex.FindAllStringSubmatch(string(content), -1)
 
-	var imports []string
 	for _, match := range matches {
 		if len(match) > 1 {
+			log.Println("0 appending", match[1])
 			imports = append(imports, match[1])
 		}
 	}
+
 	return imports, nil
 }
 
